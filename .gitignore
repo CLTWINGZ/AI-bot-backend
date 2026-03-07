@@ -1,0 +1,12 @@
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+.DS_Store
+test_out.txt
+test_out.json
+test_simple.txt
+temp_out.txt
+system_playback_demo_*.webp
