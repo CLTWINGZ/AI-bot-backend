@@ -961,28 +961,54 @@ class PatternBot:
             predictions = [prediction1, prediction2]
 
             # ─── Automated Logging & Verification ───────────────────────────
-            # ─── Automated Cloud DB Persistence ───────────────────────────
+            # ─── Automated Logging, Verification & Cloud Sync ───────────────────────────
             try:
+                # 1. Save prediction ONLY if conviction is >= 90%
                 if persist and final_conviction >= 0.90:
+                    csv_path = os.path.join(LOG_DIR, "prediction_history.csv")
+                    pending_path = os.path.join(LOG_DIR, "pending_predictions.json")
+                    
                     key = f"{fetch_asset}_{interval}_{next_ts}"
-                    if trade_entry is None or trade_tp is None:
-                        # FILTERED SIGNAL - Save but mark as non-tradeable for AI analysis
-                        pass # Optional: could log filtered signals to a separate table
-                    else:
-                        # QUALIFIED SIGNAL - Persist for Live Tracking
-                        p_item = {
-                            "symbol": fetch_asset, "interval": interval,
-                            "prediction": prediction1, "timestamp": datetime.now().isoformat(),
-                            "entry": trade_entry, "tp": trade_tp, "sl": trade_sl, "bull": bull,
-                            "logic": " | ".join(logic_notes),
-                            "is_triggered": False
-                        }
-                        await DatabaseService.save_pending_prediction(key, p_item)
+                    p_item = {
+                        "symbol": fetch_asset, "interval": interval,
+                        "prediction": prediction1, "timestamp": datetime.now().isoformat(),
+                        "entry": trade_entry, "tp": trade_tp, "sl": trade_sl, "bull": bull,
+                        "logic": " | ".join(logic_notes),
+                        "is_triggered": False
+                    }
 
-                # 2. Trigger Global Re-Analysis (Synced across instances)
+                    if trade_entry is None or trade_tp is None:
+                        # FILTERED SIGNAL (Trap) - Local CSV Log
+                        file_exists = os.path.isfile(csv_path)
+                        readable_time = datetime.fromtimestamp(next_ts).strftime('%Y-%m-%d %H:%M:%S')
+                        pd.DataFrame([{
+                            "date": datetime.now().isoformat(),
+                            "trade_time": readable_time,
+                            "symbol": fetch_asset,
+                            "interval": interval,
+                            "time_unix": next_ts,
+                            "entry": 0, "tp": 0, "sl": 0,
+                            "was_correct": -1, # -1 = Filtered/Suppressed
+                            "ai_logic": " | ".join(logic_notes)
+                        }]).to_csv(csv_path, mode='a', index=False, header=not file_exists)
+                    else:
+                        # QUALIFIED SIGNAL - Local JSON Log
+                        pending = {}
+                        if os.path.exists(pending_path):
+                            try:
+                                with open(pending_path) as f: pending = json.load(f)
+                            except: pending = {}
+                        pending[key] = p_item
+                        with open(pending_path, "w") as f:
+                            json.dump(pending, f, indent=2)
+
+                    # --- CLOUD SYNC (Supabase) ---
+                    await DatabaseService.save_pending_prediction(key, p_item)
+
+                # 2. Trigger Global Re-Analysis (Directly in this file)
                 await PatternBot.re_analyze_all_pending()
             except Exception as e:
-                print(f"Prediction Sync Error: {e}")
+                print(f"Prediction Logging Error: {e}")
 
             return {
                 "symbol": fetch_asset, "interval": interval, "history": history,
@@ -1001,11 +1027,21 @@ class PatternBot:
         """
         Global Re-Analysis Engine:
         Iterates through EVERY pending trade, fetches the latest price data 
-        and resolves it (HIT/MISS/ACTIVE) using the DatabaseService.
+        for its specific symbol/interval, and resolves it (HIT/MISS/ACTIVE).
         """
-        pending = DatabaseService.get_all_pending()
-        if not pending:
-            return
+        # LOCAL SOURCE AS PRIMARY
+        pending_path = os.path.join(LOG_DIR, "pending_predictions.json")
+        history_path = os.path.join(LOG_DIR, "prediction_history.json")
+        csv_path = os.path.join(LOG_DIR, "prediction_history.csv")
+        
+        pending = {}
+        if os.path.exists(pending_path):
+            try:
+                with open(pending_path, "r") as f:
+                    pending = json.load(f)
+            except: return
+
+        if not pending: return
 
         any_global_changes = False
         klines_cache = {}
@@ -1037,34 +1073,63 @@ class PatternBot:
                     bull = p_item.get("bull", tp >= entry) if entry and tp else True
 
                     if entry is None or tp is None:
-                        continue
+                        del pending[p_key]
+                        any_global_changes = True
+                        break
                     
                     tp_hit = (bull and h >= tp) or (not bull and l <= tp)
                     sl_hit = (bull and l <= sl) or (not bull and h >= sl)
                     entry_hit = (bull and h >= entry) or (not bull and l <= entry)
 
-                    # Update Hits
                     if entry_hit and not p_item.get("is_triggered", False):
                         p_item["is_triggered"] = True
-                        await DatabaseService.save_pending_prediction(p_key, p_item)
+                        any_global_changes = True
                     
                     success = None
                     if tp_hit and not sl_hit: success = True
                     elif sl_hit: success = False
                     
                     if success is not None:
+                        any_global_changes = True
                         verdict = {
                             "symbol": symbol, "interval": interval, "time": k_time,
                             "actual_ohlc": {"time": k_time, "open": o, "high": h, "low": l, "close": c},
                             "was_correct": success, "date": datetime.now().isoformat(),
                             "entry": entry, "tp": tp, "sl": sl,
                             "logic": p_item.get("logic", "N/A"),
-                            "failure_analysis": "None (Target Hit)" if success else "SL Hit (Volatility Reversal)"
+                            "failure_analysis": "None (Target Hit)" if success else "Volatility Spike (SL Hit)"
                         }
+
+                        # --- LOCAL SAVING ---
+                        hist_data = []
+                        if os.path.exists(history_path):
+                            try:
+                                with open(history_path) as f: hist_data = json.load(f)
+                            except: pass
+                        hist_data.append(verdict)
+                        with open(history_path, "w") as f: json.dump(hist_data[-100:], f, indent=2)
+
+                        # CSV Audit Log
+                        file_exists = os.path.isfile(csv_path)
+                        readable_time = datetime.fromisoformat(verdict["date"]).strftime('%Y-%m-%d %H:%M:%S')
+                        pd.DataFrame([{
+                            "date": verdict["date"], "trade_time": readable_time,
+                            "symbol": symbol, "interval": interval,
+                            "time_unix": k_time, "entry": entry, "tp": tp, "sl": sl,
+                            "was_correct": int(success), "ai_logic": verdict["logic"]
+                        }]).to_csv(csv_path, mode='a', index=False, header=not file_exists)
+
+                        # --- CLOUD SYNC ---
                         await DatabaseService.resolve_trade(p_key, verdict)
+
+                        del pending[p_key]
                         break
             except Exception as e:
                 print(f"Error re-analyzing {cache_key}: {e}")
+
+        if any_global_changes:
+            with open(pending_path, "w") as f:
+                json.dump(pending, f, indent=2)
 
     @staticmethod
     async def analyze_patterns(symbol: str, interval: str = "15m") -> str:
