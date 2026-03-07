@@ -1,18 +1,17 @@
 services:
   - type: web
     name: crypto-autopilot-backend
-    runtime: python
+    runtime: docker
     region: ohio
-    # --- CRITICAL: Only build if files in backend change, IGNORE data folder ---
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: PYTHONPATH=. uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # --- Point Render to the Dockerfile inside the backend folder ---
+    dockerContext: .
+    dockerfilePath: backend/Dockerfile
     envVars:
       - key: SUPABASE_URL
         value: https://vlcdzwwctuvctjonplly.supabase.co
       - key: SUPABASE_KEY
         value: sb_publishable_ThzLvFYHa9oRXIvJ6U39PQ_BqPIr8qP
       - key: PYTHONPATH
-        value: .
-      - key: PYTHON_VERSION
-        value: 3.11.0
+        value: /app
+      - key: RENDER
+        value: "true"
