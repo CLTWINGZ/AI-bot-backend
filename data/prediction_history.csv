@@ -123,3 +123,4 @@ date,symbol,interval,time_unix,pred_open,pred_high,pred_low,pred_close,act_open,
 2026-03-07T23:54:06.140173,2026-03-07 23:55:00,BTC,1m,1772927700,0,0,0,-1,Low R:R (0.4) / Filtering Sub-Optimal Setup
 2026-03-07T23:55:08.839622,2026-03-07 23:56:00,BTC,1m,1772927760,0,0,0,-1,Low R:R (0.4) / Filtering Sub-Optimal Setup
 2026-03-07T23:56:11.331883,2026-03-07 23:57:00,BTC,1m,1772927820,0,0,0,-1,Low R:R (0.4) / Filtering Sub-Optimal Setup
+2026-03-07T23:57:14.341814,2026-03-07 23:58:00,BTC,1m,1772927880,0,0,0,-1,Low R:R (0.7) / Filtering Sub-Optimal Setup
