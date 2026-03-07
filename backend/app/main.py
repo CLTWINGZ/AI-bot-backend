@@ -66,6 +66,9 @@ async def start_autopilot():
     print("DEBUG: Starting Autopilot background loop...")
     asyncio.create_task(autopilot.autopilot_loop("BTC"))
 
-    print("DEBUG: Starting GitHub Auto-Sync background loop...")
-    from app.services import github_sync
-    asyncio.create_task(github_sync.sync_csv_to_github())
+    if os.environ.get("RENDER"):
+        print("DEBUG: Production mode. Skipping GitHub Auto-Sync to prevent build loops.")
+    else:
+        print("DEBUG: Starting GitHub Auto-Sync background loop...")
+        from app.services import github_sync
+        asyncio.create_task(github_sync.sync_csv_to_github())
