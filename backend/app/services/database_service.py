@@ -1,0 +1,167 @@
+import os
+import json
+import asyncio
+from datetime import datetime
+from typing import List, Dict, Any, Optional
+from supabase import create_client, Client
+
+# --- Configuration (Set these in your .env or Render/Vercel settings) ---
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+class DatabaseService:
+    _instance: Optional[Client] = None
+
+    @classmethod
+    def get_client(cls) -> Optional[Client]:
+        """Lazy initialization of the Supabase client."""
+        if not cls._instance and SUPABASE_URL and SUPABASE_KEY:
+            try:
+                cls._instance = create_client(SUPABASE_URL, SUPABASE_KEY)
+            except Exception as e:
+                print(f"DATABASE_SERVICE ERROR: Failed to init Supabase - {e}")
+        return cls._instance
+
+    @staticmethod
+    async def save_pending_prediction(p_key: str, p_item: Dict[str, Any]):
+        """Dual-Persists: Cloud DB + Local File."""
+        # 1. Always save locally first (Shadow Backup)
+        DatabaseService._local_save_pending(p_key, p_item)
+
+        # 2. Save to Cloud if configured
+        client = DatabaseService.get_client()
+        if client:
+            try:
+                data = {
+                    "id": p_key,
+                    "symbol": p_item["symbol"],
+                    "interval": p_item["interval"],
+                    "timestamp": p_item["timestamp"],
+                    "entry": float(p_item["entry"]),
+                    "tp": float(p_item["tp"]),
+                    "sl": float(p_item["sl"]),
+                    "bull": bool(p_item["bull"]),
+                    "is_triggered": bool(p_item.get("is_triggered", False)),
+                    "logic": p_item.get("logic", ""),
+                    "prediction_json": json.dumps(p_item.get("prediction", {})),
+                    "rr1_hit": bool(p_item.get("rr1_hit", False)),
+                    "rr2_hit": bool(p_item.get("rr2_hit", False)),
+                    "rr3_hit": bool(p_item.get("rr3_hit", False)),
+                    "created_at": "now()"
+                }
+                client.table("pending_predictions").upsert(data).execute()
+            except Exception as e:
+                print(f"CLOUD DB ERROR (Pending): {e}")
+
+    @staticmethod
+    def get_all_pending() -> Dict[str, Dict[str, Any]]:
+        """Retrieves active signals (Prioritizes Cloud DB)."""
+        client = DatabaseService.get_client()
+        if client:
+            try:
+                res = client.table("pending_predictions").select("*").execute()
+                if res.data:
+                    pending = {}
+                    for row in res.data:
+                        row["prediction"] = json.loads(row["prediction_json"])
+                        pending[row["id"]] = row
+                    return pending
+            except Exception:
+                pass
+        
+        # Fallback to local if cloud fails or not configured
+        return DatabaseService._local_get_pending()
+
+    @staticmethod
+    async def resolve_trade(p_key: str, verdict: Dict[str, Any]):
+        """Dual-Resolve: Cloud DB + Local History."""
+        # 1. Always process locally (Shadow Backup)
+        DatabaseService._local_resolve_trade(p_key, verdict)
+
+        # 2. Process in Cloud if configured
+        client = DatabaseService.get_client()
+        if client:
+            try:
+                history_data = {
+                    "symbol": verdict["symbol"],
+                    "interval": verdict["interval"],
+                    "time_unix": verdict["time"],
+                    "date": verdict["date"],
+                    "entry": float(verdict["entry"]),
+                    "tp": float(verdict["tp"]),
+                    "sl": float(verdict["sl"]),
+                    "was_correct": bool(verdict["was_correct"]),
+                    "logic": verdict.get("logic", ""),
+                    "actual_ohlc": json.dumps(verdict.get("actual_ohlc", {})),
+                    "failure_analysis": verdict.get("failure_analysis", "None")
+                }
+                client.table("prediction_history").insert(history_data).execute()
+                client.table("pending_predictions").delete().eq("id", p_key).execute()
+            except Exception as e:
+                print(f"CLOUD DB ERROR (Resolve): {e}")
+
+    @staticmethod
+    def get_history(limit: int = 50) -> List[Dict[str, Any]]:
+        """Fetch permanent history for charts and stats."""
+        client = DatabaseService.get_client()
+        if not client:
+            return DatabaseService._local_get_history(limit)
+
+        try:
+            res = client.table("prediction_history").select("*").order("date", desc=True).limit(limit).execute()
+            for row in res.data:
+                if row.get("actual_ohlc"):
+                    row["actual_ohlc"] = json.loads(row["actual_ohlc"])
+            return res.data
+        except Exception as e:
+            print(f"DATABASE_SERVICE ERROR: Failed to fetch history - {e}")
+            return []
+
+    # --- Local Fallbacks (Keeps the app working while keys are missing) ---
+    @staticmethod
+    def _local_save_pending(p_key, p_item):
+        path = os.path.join(os.getcwd(), "data", "pending_predictions.json")
+        data = {}
+        if os.path.exists(path):
+            try:
+                with open(path) as f: data = json.load(f)
+            except: pass
+        data[p_key] = p_item
+        with open(path, "w") as f: json.dump(data, f, indent=2)
+
+    @staticmethod
+    def _local_get_pending():
+        path = os.path.join(os.getcwd(), "data", "pending_predictions.json")
+        if os.path.exists(path):
+            try:
+                with open(path) as f: return json.load(f)
+            except: return {}
+        return {}
+
+    @staticmethod
+    def _local_resolve_trade(p_key, verdict):
+        path_h = os.path.join(os.getcwd(), "data", "prediction_history.json")
+        path_p = os.path.join(os.getcwd(), "data", "pending_predictions.json")
+        # Save to history
+        hist = []
+        if os.path.exists(path_h):
+            try:
+                with open(path_h) as f: hist = json.load(f)
+            except: pass
+        hist.append(verdict)
+        with open(path_h, "w") as f: json.dump(hist[-100:], f, indent=2)
+        # Remove from pending
+        pending = DatabaseService._local_get_pending()
+        if p_key in pending: del pending[p_key]
+        with open(path_p, "w") as f: json.dump(pending, f, indent=2)
+
+    @staticmethod
+    def _local_get_history(limit):
+        path = os.path.join(os.getcwd(), "data", "prediction_history.json")
+        if os.path.exists(path):
+            try:
+                with open(path) as f: 
+                    data = json.load(f)
+                    return data[-limit:]
+            except: return []
+        return []

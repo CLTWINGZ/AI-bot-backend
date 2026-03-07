@@ -30,6 +30,7 @@ import asyncio
 from datetime import datetime
 from app.services import chart_patterns
 from .llm_advisor import LLMAdvisor
+from .database_service import DatabaseService
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "static")
 LOG_DIR    = os.path.join(os.path.dirname(__file__), "..", "..", "data")
@@ -604,8 +605,13 @@ class PatternBot:
             
             # Indicators
             df["sma50"]  = df["Close"].rolling(50).mean()
+            df["ma99"]   = df["Close"].rolling(99).mean()
+            df["ma200"]  = df["Close"].rolling(200).mean()
+            df["ema7"]   = df["Close"].ewm(span=7, adjust=False).mean()
             df["ema20"]  = df["Close"].ewm(span=20, adjust=False).mean()
+            df["ema25"]  = df["Close"].ewm(span=25, adjust=False).mean()
             df["rsi"]    = ta.momentum.RSIIndicator(df["Close"], window=14).rsi()
+            df["psar"]   = ta.trend.PSARIndicator(df["High"], df["Low"], df["Close"], step=0.02, max_step=0.2).psar()
             atr_ind      = ta.volatility.AverageTrueRange(df["High"], df["Low"], df["Close"], window=14)
             atr          = float(atr_ind.average_true_range().iloc[-1]) if not pd.isna(atr_ind.average_true_range().iloc[-1]) else (float(df["Close"].iloc[-1]) * 0.01)
 
@@ -625,6 +631,15 @@ class PatternBot:
             dt_delta = history[-1]["time"] - history[-2]["time"] if len(history) > 1 else 0
             next_ts = history[-1]["time"] + dt_delta
             hist_times = [h["time"] for h in history]
+            
+            # --- Update History Payload with new MAs/EMAs ---
+            for i in range(len(history)):
+                val_ma99 = df["ma99"].iloc[i]
+                val_ma200 = df["ma200"].iloc[i]
+                history[i]["ema7"] = float(df["ema7"].iloc[i]) if not pd.isna(df["ema7"].iloc[i]) else None
+                history[i]["ema25"] = float(df["ema25"].iloc[i]) if not pd.isna(df["ema25"].iloc[i]) else None
+                history[i]["ma99"] = float(val_ma99) if not pd.isna(val_ma99) else None
+                history[i]["ma200"] = float(val_ma200) if not pd.isna(val_ma200) else None
 
             # ─── 2. Expert Consensus "Ultra-Accuracy" Engine ────────────────
             # To reach ~90%+ accuracy, we must filter out "Market Noise"
@@ -633,20 +648,45 @@ class PatternBot:
             score = 0  # -100 to +100
             logic_notes = []
             
+            # Fetch and inject Macro Sentiment
+            from .news_service import news_service
+            try:
+                macro_news = await news_service.get_macro_sentiment()
+                logic_notes.append(macro_news)
+            except Exception as e:
+                pass
+            
             # Factor 1: MTF Trend Filter (Multi-Timeframe)
             # If 15m is Long, but 4h is Short -> Penalize Score
             # (In this simple version, we check the slope of the 50 SMA)
             sma50_prev = df["sma50"].iloc[-10] if len(df) > 10 else df["sma50"].iloc[0]
             mtf_trend_up = df["sma50"].iloc[-1] > sma50_prev
             
-            # Factor 2: Trend Alignment (Strict)
-            ema20, ema50 = df["ema20"].iloc[-1], df["sma50"].iloc[-1]
+            # Factor 2: Trend Alignment & Moving Average Structure
+            ema7, ema20, ema25 = df["ema7"].iloc[-1], df["ema20"].iloc[-1], df["ema25"].iloc[-1]
+            ma99, ema50, ma200 = df["ma99"].iloc[-1], df["sma50"].iloc[-1], df["ma200"].iloc[-1]
+            
             if not pd.isna(ema50):
                 if p_open > ema50 and mtf_trend_up: score += 25; logic_notes.append("Strong MTF Trend")
                 elif p_open < ema50 and not mtf_trend_up: score -= 25; logic_notes.append("Strong MTF Downtrend")
                 else: score -= 10; logic_notes.append("Trend Conflict") # Penalize noise
+            
+            # --- Golden / Death Stack Evaluation ---
+            if not pd.isna(ma200) and not pd.isna(ma99):
+                 if ema7 > ema25 and ema25 > ma99 and ma99 > ma200 and p_open > ema7:
+                     score += 30; logic_notes.append("Perfect Bullish Alignment (Golden Stack)")
+                 elif ema7 < ema25 and ema25 < ma99 and ma99 < ma200 and p_open < ema7:
+                     score -= 30; logic_notes.append("Perfect Bearish Alignment (Death Stack)")
+            
+            # Factor 3: Parabolic SAR (Stop & Reverse)
+            psar_val = df["psar"].iloc[-1]
+            if not pd.isna(psar_val):
+                if p_open > psar_val:
+                    score += 10; logic_notes.append("PSAR: Uptrend Protected")
+                else:
+                    score -= 10; logic_notes.append("PSAR: Downtrend Pressure")
 
-            # Factor 3: RSI Divergence & Volatility Buffer
+            # Factor 3.5: RSI Divergence & Volatility Buffer
             rsi_val = df["rsi"].iloc[-1]
             current_atr = atr
             # If volume/volatility is dead, accuracy drops -> Filter it
@@ -696,14 +736,14 @@ class PatternBot:
             # Factor 6: MACD & Bollinger/Supertrend (Quant Layer)
             macd_sig = detect_macd_signal(closes)
             v_bands = detect_volatility_bands(df)
-            if "MACD Bullish" in macd_sig: score += 10; logic_notes.append("MACD Bullish")
-            elif "MACD Bearish" in macd_sig: score -= 10; logic_notes.append("MACD Bearish")
+            if "MACD Bullish" in macd_sig: score += 10; logic_notes.append("MACD: Bullish Convergence")
+            elif "MACD Bearish" in macd_sig: score -= 10; logic_notes.append("MACD: Bearish Divergence")
             
-            if v_bands["st_bias"] == "Bullish": score += 10; logic_notes.append("ST Bullish")
-            else: score -= 10; logic_notes.append("ST Bearish")
+            if v_bands["st_bias"] == "Bullish": score += 10; logic_notes.append("Supertrend: Bullish Support Maintained")
+            else: score -= 10; logic_notes.append("Supertrend: Bearish Resistance Capped")
             
-            if "Overextended Bottom" in v_bands["bb"]: score += 12; logic_notes.append("BB Mean Reversion (Up)")
-            elif "Overextended Top" in v_bands["bb"]: score -= 12; logic_notes.append("BB Mean Reversion (Down)")
+            if "Overextended Bottom" in v_bands["bb"]: score += 15; logic_notes.append("Bollinger Bands: Overextended Bottom (Mean Reversion Imminent)")
+            elif "Overextended Top" in v_bands["bb"]: score -= 15; logic_notes.append("Bollinger Bands: Overextended Top (Mean Reversion Down)")
 
             # Factor 6.5: Golden Pocket & Candlesticks
             fib_pocket = detect_golden_pocket(closes, df["High"].values, df["Low"].values)
@@ -774,10 +814,10 @@ class PatternBot:
             if final_conviction >= 0.985:
                  final_conviction = 0.9999
             
-            # ── TRADE CALCULATION & GATING (Strict 1:3 RR) ──
+            # ── TRADE CALCULATION & GATING (Strict 1:1 RR) ──
             trade_entry = float(p_open)
             risk_unit   = atr * 1.5
-            bull        = (score > 0)
+            bull        = bool(score > 0)
             
             # Calculate AI's predicted target reach
             target_multiplier = 1.35 if phase == "Impulse" else 0.85
@@ -789,12 +829,11 @@ class PatternBot:
             risk = risk_unit
             rr_ratio = reward / risk if risk > 0 else 0
             
-            # ULTRA-STRICT GATING
-            # 1. Conviction >= 0.99
-            # 2. Confluence >= 3 factors
-            # 3. Risk/Reward >= 3.0
-            is_high_conf = final_conviction >= 0.99
-            is_high_rr   = rr_ratio >= 3.0
+            # REVISED GATING RULES (User Requested)
+            # 1. Conviction >= 0.90
+            # 2. Risk/Reward >= 1.0
+            is_high_conf = final_conviction >= 0.90
+            is_high_rr   = rr_ratio >= 1.0
             is_confluent = len(logic_notes) >= 3
             
             if not is_high_conf or not is_confluent or not is_high_rr:
@@ -804,39 +843,43 @@ class PatternBot:
                 if not is_high_rr and is_high_conf:
                     logic_notes = [f"Low R:R ({rr_ratio:.1f}) / Filtering Sub-Optimal Setup"]
                 else:
-                    logic_notes = ["Awaiting 99.99% Setup / Confluence Too Low... Filtering Noise"]
-                trade_tp = trade_entry
+                    logic_notes = ["Awaiting 90.00% Setup / Confluence Too Low... Filtering Noise"]
+                trade_tp = None
+                trade_entry = None
+                trade_sl = None
+                rr1 = rr2 = rr3 = None
             else:
-                # Valid 99.99% + 1:3 RR Signal
+                # Valid 90%+ + 1:1 RR Signal
                 p_close_final = predicted_tp
                 p_color = "#2bda9e" if bull else "#ff5252"
                 trade_tp = predicted_tp
                 logic_notes.append(f"RR Ratio: {rr_ratio:.1f} (✅ Qualified)")
 
             # ── Fee-Aware TP Floor ──────────────────────────────────────────
-            min_profit_distance = trade_entry * FEE_BUFFER
-            if bull:
-                if trade_tp < trade_entry + min_profit_distance:
-                    trade_tp = trade_entry + min_profit_distance
-            else:
-                if trade_tp > trade_entry - min_profit_distance:
-                    trade_tp = trade_entry - min_profit_distance
-            
-            # Sync predicted candle close with the finalized TP level
-            if is_high_conf and is_confluent and is_high_rr:
-                p_close_final = trade_tp
+            if trade_tp is not None and trade_entry is not None:
+                min_profit_distance = trade_entry * FEE_BUFFER
+                if bull:
+                    if trade_tp < trade_entry + min_profit_distance:
+                        trade_tp = trade_entry + min_profit_distance
+                else:
+                    if trade_tp > trade_entry - min_profit_distance:
+                        trade_tp = trade_entry - min_profit_distance
+                
+                # Sync predicted candle close with the finalized TP level
+                if is_high_conf and is_confluent and is_high_rr:
+                    p_close_final = trade_tp
 
-            # Final SL and RR Targets for UI
-            if bull:
-                trade_sl = trade_entry - risk_unit
-                rr1 = trade_entry + (risk_unit * 1.0)
-                rr2 = trade_entry + (risk_unit * 2.0)
-                rr3 = trade_entry + (risk_unit * 3.0)
-            else:
-                trade_sl = trade_entry + risk_unit
-                rr1 = trade_entry - (risk_unit * 1.0)
-                rr2 = trade_entry - (risk_unit * 2.0)
-                rr3 = trade_entry - (risk_unit * 3.0)
+                # Final SL and RR Targets for UI
+                if bull:
+                    trade_sl = trade_entry - risk_unit
+                    rr1 = trade_entry + (risk_unit * 1.0)
+                    rr2 = trade_entry + (risk_unit * 2.0)
+                    rr3 = trade_entry + (risk_unit * 3.0)
+                else:
+                    trade_sl = trade_entry + risk_unit
+                    rr1 = trade_entry - (risk_unit * 1.0)
+                    rr2 = trade_entry - (risk_unit * 2.0)
+                    rr3 = trade_entry - (risk_unit * 3.0)
 
             # ── Final Candle 1 Geometry ──────────────────────────────────
             # Ensure high/low bound the open/close and include a realistic wick
@@ -918,33 +961,28 @@ class PatternBot:
             predictions = [prediction1, prediction2]
 
             # ─── Automated Logging & Verification ───────────────────────────
+            # ─── Automated Cloud DB Persistence ───────────────────────────
             try:
-                # 1. Save this new prediction ONLY if manual view (persist=True) AND 99.99%+ accuracy setup
-                if persist and final_conviction >= 0.99:
-                    pending_path = os.path.join(LOG_DIR, "pending_predictions.json")
-                    pending = {}
-                    if os.path.exists(pending_path):
-                        try:
-                            with open(pending_path) as f:
-                                pending = json.load(f)
-                        except:
-                            pending = {}
-
+                if persist and final_conviction >= 0.90:
                     key = f"{fetch_asset}_{interval}_{next_ts}"
-                    pending[key] = {
-                        "symbol": fetch_asset, "interval": interval,
-                        "prediction": prediction1, "timestamp": datetime.now().isoformat(),
-                        "entry": trade_entry, "tp": trade_tp, "sl": trade_sl, "bull": bull,
-                        "logic": " | ".join(logic_notes),
-                        "is_triggered": False # Strictly pending until entry hit
-                    }
-                    with open(pending_path, "w") as f:
-                        json.dump(pending, f, indent=2)
+                    if trade_entry is None or trade_tp is None:
+                        # FILTERED SIGNAL - Save but mark as non-tradeable for AI analysis
+                        pass # Optional: could log filtered signals to a separate table
+                    else:
+                        # QUALIFIED SIGNAL - Persist for Live Tracking
+                        p_item = {
+                            "symbol": fetch_asset, "interval": interval,
+                            "prediction": prediction1, "timestamp": datetime.now().isoformat(),
+                            "entry": trade_entry, "tp": trade_tp, "sl": trade_sl, "bull": bull,
+                            "logic": " | ".join(logic_notes),
+                            "is_triggered": False
+                        }
+                        await DatabaseService.save_pending_prediction(key, p_item)
 
-                # 2. Global Re-Analysis Engine: Evaluate ALL pending trades globally
+                # 2. Trigger Global Re-Analysis (Synced across instances)
                 await PatternBot.re_analyze_all_pending()
             except Exception as e:
-                print(f"Prediction Logging Error: {e}")
+                print(f"Prediction Sync Error: {e}")
 
             return {
                 "symbol": fetch_asset, "interval": interval, "history": history,
@@ -963,24 +1001,13 @@ class PatternBot:
         """
         Global Re-Analysis Engine:
         Iterates through EVERY pending trade, fetches the latest price data 
-        for its specific symbol/interval, and resolves it (HIT/MISS/ACTIVE).
+        and resolves it (HIT/MISS/ACTIVE) using the DatabaseService.
         """
-        pending_path = os.path.join(LOG_DIR, "pending_predictions.json")
-        if not os.path.exists(pending_path):
-            return
-
-        try:
-            with open(pending_path, "r") as f:
-                pending = json.load(f)
-        except Exception as e:
-            print(f"JSON Error in Global Re-Analysis: {e}")
+        pending = DatabaseService.get_all_pending()
+        if not pending:
             return
 
         any_global_changes = False
-        history_path = os.path.join(LOG_DIR, "prediction_history.json")
-        csv_path = os.path.join(LOG_DIR, "prediction_history.csv")
-        
-        # Cache to avoid redundant API hits
         klines_cache = {}
 
         for p_key in list(pending.keys()):
@@ -992,7 +1019,7 @@ class PatternBot:
                 if cache_key not in klines_cache:
                     async with httpx.AsyncClient(timeout=10) as client:
                         res = await client.get(
-                            f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}USDT&interval={interval}&limit=5"
+                            f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}USDT&interval={interval}&limit=10"
                         )
                         if res.status_code == 200:
                             klines_cache[cache_key] = res.json()
@@ -1005,73 +1032,39 @@ class PatternBot:
                     if k_time < p_item["prediction"]["time"]: continue
                     
                     o, h, l, c = float(k[1]), float(k[2]), float(k[3]), float(k[4])
-                    entry = p_item.get("entry", p_item["prediction"]["open"])
-                    tp    = p_item.get("tp",    p_item["prediction"]["close"])
-                    sl    = p_item.get("sl",    entry)
-                    bull  = p_item.get("bull",  tp >= entry)
+                    entry, tp = p_item.get("entry"), p_item.get("tp")
+                    sl = p_item.get("sl", entry)
+                    bull = p_item.get("bull", tp >= entry) if entry and tp else True
 
+                    if entry is None or tp is None:
+                        continue
+                    
                     tp_hit = (bull and h >= tp) or (not bull and l <= tp)
                     sl_hit = (bull and l <= sl) or (not bull and h >= sl)
                     entry_hit = (bull and h >= entry) or (not bull and l <= entry)
 
-                    # Track RR 1:1, 1:2, 1:3 hits
-                    rr1 = p_item["prediction"].get("rr1")
-                    rr2 = p_item["prediction"].get("rr2")
-                    rr3 = p_item["prediction"].get("rr3")
-
-                    if rr1 and ((bull and h >= rr1) or (not bull and l <= rr1)):
-                        p_item["rr1_hit"] = True
-                    if rr2 and ((bull and h >= rr2) or (not bull and l <= rr2)):
-                        p_item["rr2_hit"] = True
-                    if rr3 and ((bull and h >= rr3) or (not bull and l <= rr3)):
-                        p_item["rr3_hit"] = True
-
+                    # Update Hits
                     if entry_hit and not p_item.get("is_triggered", False):
                         p_item["is_triggered"] = True
-                        any_global_changes = True
+                        await DatabaseService.save_pending_prediction(p_key, p_item)
                     
                     success = None
                     if tp_hit and not sl_hit: success = True
                     elif sl_hit: success = False
                     
                     if success is not None:
-                        any_global_changes = True
                         verdict = {
                             "symbol": symbol, "interval": interval, "time": k_time,
-                            "predicted_ohlc": p_item["prediction"], 
                             "actual_ohlc": {"time": k_time, "open": o, "high": h, "low": l, "close": c},
                             "was_correct": success, "date": datetime.now().isoformat(),
-                            "failure_analysis": "None (Hit)" if success else "Volatility Spike (SL Hit)",
                             "entry": entry, "tp": tp, "sl": sl,
                             "logic": p_item.get("logic", "N/A"),
-                            "rr1": p_item["prediction"].get("rr1"),
-                            "rr2": p_item["prediction"].get("rr2"),
-                            "rr3": p_item["prediction"].get("rr3")
+                            "failure_analysis": "None (Target Hit)" if success else "SL Hit (Volatility Reversal)"
                         }
-
-                        hist_data = []
-                        if os.path.exists(history_path):
-                            try:
-                                with open(history_path) as f: hist_data = json.load(f)
-                            except: pass
-                        hist_data.append(verdict)
-                        with open(history_path, "w") as f: json.dump(hist_data[-50:], f, indent=2)
-
-                        # CSV Audit
-                        file_exists = os.path.isfile(csv_path)
-                        pd.DataFrame([{
-                            "date": verdict["date"], "symbol": symbol, "interval": interval,
-                            "time_unix": k_time, "entry": entry, "tp": tp, "sl": sl,
-                            "was_correct": int(success), "ai_logic": verdict["logic"]
-                        }]).to_csv(csv_path, mode='a', index=False, header=not file_exists)
-
-                        del pending[p_key]
+                        await DatabaseService.resolve_trade(p_key, verdict)
                         break
             except Exception as e:
                 print(f"Error re-analyzing {cache_key}: {e}")
-
-        if any_global_changes:
-            with open(pending_path, "w") as f: json.dump(pending, f, indent=2)
 
     @staticmethod
     async def analyze_patterns(symbol: str, interval: str = "15m") -> str:

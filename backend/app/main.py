@@ -42,7 +42,7 @@ app.include_router(api_router, prefix="/api")
 
 @app.get("/api/beacon")
 def beacon():
-    return {"status": "found", "version": "v2.5-STABLE"}
+    return {"status": "found", "version": "v2.5.1-STABLE"}
 
 @app.get("/")
 def read_root():
@@ -56,5 +56,16 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 # ── Autopilot background loop ───────────────────────────────────────────────
 @app.on_event("startup")
 async def start_autopilot():
+    print("DEBUG: Loading API configuration from persistence...")
+    from app.api.endpoints import _read_env
+    env = _read_env()
+    for k in ["GEMINI_API_KEY", "OPENAI_API_KEY", "OPENAI_API_BASE", "LLM_MODEL"]:
+        if env.get(k):
+            os.environ[k] = env[k]
+
     print("DEBUG: Starting Autopilot background loop...")
     asyncio.create_task(autopilot.autopilot_loop("BTC"))
+
+    print("DEBUG: Starting GitHub Auto-Sync background loop...")
+    from app.services import github_sync
+    asyncio.create_task(github_sync.sync_csv_to_github())

@@ -63,14 +63,25 @@ async def _run_cycle(asset: str = DEFAULT_ASSET):
 
     try:
         # ── 1-minute chart analysis ───────────────────────────────────────
-        pred_data = await PatternBot.get_ohlc_prediction(asset, interval="1m", persist=False)
+        # Note: persist=True means the Autopilot automatically tracks valid signals > 90% into history
+        pred_data = await PatternBot.get_ohlc_prediction(asset, interval="1m", persist=True)
         p = pred_data.get("prediction", {})
-        conf = p.get("confidence", "N/A")
+        conf_str = p.get("confidence", "0%")
+        conf_val = float(conf_str.replace("%", "")) if conf_str != "N/A" else 0.0
         logic = p.get("logic", "Scanning...")
+        entry = p.get("entry")
         
-        pattern_text = f"- **AI Conviction:** {conf}\\n"
-        for note in logic.split(" | "):
-            pattern_text += f"- {note}\\n"
+        # If entry is None, PatternBot suppressed it due to < 90% confluence or < 1:1 RR
+        if entry is None or conf_val < 90.0:
+            pattern_text = (
+                "- **AI Conviction:** 🤖 SCANNING\\n"
+                "- Awaiting 90.00% Confluence Setup...\\n"
+                "- Filtering out market noise & low probability zones.\\n"
+            )
+        else:
+            pattern_text = f"- **AI Conviction:** {conf_str}\\n"
+            for note in logic.split(" | "):
+                pattern_text += f"- {note}\\n"
             
         results["pattern_1m"] = pattern_text[:1200]
 
@@ -100,8 +111,9 @@ async def autopilot_loop(asset: str = DEFAULT_ASSET):
     asyncio.create_task(re_analysis_tracker())
     
     while True:
-        if _connections:          # only compute when someone's watching
-            payload = await _run_cycle(asset)
+        # Always run cycle to maintain history and logging (even if 0 connections)
+        payload = await _run_cycle(asset)
+        if _connections:          # broadcast only if clients connected
             await _broadcast(payload)
         await asyncio.sleep(AUTOPILOT_INTERVAL_SECS)
 
@@ -112,20 +124,20 @@ async def re_analysis_tracker():
     """
     from .stats_service import StatsService
     while True:
-        if _connections:
-            try:
-                # 1. Run the global re-analysis engine in PatternBot
-                await PatternBot.re_analyze_all_pending()
-                
-                # 2. Fetch updated stats and broadcast
+        try:
+            # 1. Run the global re-analysis engine in PatternBot continuously
+            await PatternBot.re_analyze_all_pending()
+            
+            # 2. Fetch updated stats and broadcast IF clients are connected
+            if _connections:
                 stats = StatsService.get_prediction_stats()
                 await _broadcast({
                     "type": "autopilot_stats",
                     "timestamp": time.time(),
                     "stats": stats
                 })
-            except Exception as e:
-                print(f"Autopilot Re-Analysis Error: {e}")
+        except Exception as e:
+            print(f"Autopilot Re-Analysis Error: {e}")
         await asyncio.sleep(10) # 10s intervals for live feel
 
 

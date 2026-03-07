@@ -1,37 +1,34 @@
-import json
 import os
-from datetime import datetime
+from .database_service import DatabaseService
 
 class StatsService:
     @staticmethod
     def get_prediction_stats():
-        """Returns historical AI accuracy, past records, and active pending trades."""
-        base_dir = os.path.dirname(__file__)
-        history_path = os.path.join(base_dir, "..", "..", "data", "prediction_history.json")
-        pending_path = os.path.join(base_dir, "..", "..", "data", "pending_predictions.json")
+        """Returns historical AI accuracy, past records, and active pending trades from Cloud DB."""
         
-        data = []
-        try:
-            if os.path.exists(history_path):
-                with open(history_path) as f:
-                    data = json.load(f)
-        except Exception as e:
-            print(f"Error loading prediction history: {e}")
+        # 1. Fetch from History
+        raw_history = DatabaseService.get_history(limit=50)
+        
+        # FILTER: Only show "Perfect" signals (boolean was_correct and no Filtering logic)
+        data = [
+            x for x in raw_history 
+            if x.get("was_correct") in [True, False] 
+            and "Filtering" not in str(x.get("logic", ""))
+            and "Sub-Optimal" not in str(x.get("logic", ""))
+        ]
                 
-        # Load and format pending trades
-        pending_data = {}
-        try:
-            if os.path.exists(pending_path):
-                with open(pending_path) as f:
-                    pending_data = json.load(f)
-        except Exception as e:
-            print(f"Error loading pending predictions: {e}")
+        # 2. Fetch Pending
+        pending_data = DatabaseService.get_all_pending()
                 
         active_count = 0
         for key, p_trade in pending_data.items():
-            if not p_trade: continue # Skip empty
+            if not p_trade: continue
+            
+            p_logic = p_trade.get("logic", "")
+            if "Filtering" in p_logic or "Sub-Optimal" in p_logic:
+                continue
+
             active_count += 1
-            # Format to match history verdict format
             pred = p_trade.get("prediction", {})
             data.append({
                 "symbol": p_trade.get("symbol", "BTC"),

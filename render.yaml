@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: crypto-autopilot-backend
+    runtime: python
+    region: ohio # Default region, can be changed
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && PYTHONPATH=. uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SUPABASE_URL
+        value: https://vlcdzwwctuvctjonplly.supabase.co
+      - key: SUPABASE_KEY
+        value: sb_publishable_ThzLvFYHa9oRXIvJ6U39PQ_BqPIr8qP
+      - key: GEMINI_API_KEY
+        sync: false # Set this in the Render dashboard manually
+      - key: PYTHONPATH
+        value: .
+      - key: PYTHON_VERSION
+        value: 3.11.0

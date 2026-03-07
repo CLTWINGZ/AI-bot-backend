@@ -10,6 +10,7 @@ Priority order (first configured key wins):
 import os
 import httpx
 import re
+import json
 
 # ─────────────────────────────────────────────────────────────────────────────
 FINANCIAL_SYSTEM_PROMPT = """You are CryptoInsight Alpha, an institutional-grade
@@ -42,6 +43,16 @@ async def llm_narrative(signals: dict, user_query: str) -> str:
                 hits = int(df_perf['was_correct'].sum())
                 total = len(df_perf)
                 accuracy = (hits / total * 100)
+                
+                # Failed trade analysis memory (Self-Correction) - Expanded memory
+                failures = df_perf[df_perf['was_correct'] == 0].tail(10) # Get last 10 failed trades
+                failure_context = ""
+                if not failures.empty:
+                    failure_context = "\n[RECENT FAILURES TO AVOID (LEARNING MEMORY)]\n"
+                    failure_context += "The following are your most recent inaccurate trades. DO NOT repeat these mistakes. Adjust criteria if you see this setup again:\n"
+                    for _, row in failures.iterrows():
+                        failure_context += f" - Failed Trade ({row.get('date', 'Unknown Date')}): {row.get('symbol')} ({row.get('interval')}). Logic Used: {row.get('ai_logic', 'Unknown')} -> Result: {row.get('failure_analysis', 'SL Hit')}\n"
+
                 perf_context = (
                     f"\n[MODEL RELIABILITY CONTEXT]\n"
                     f"Past Performance: {hits}/{total} correct direction hits ({accuracy:.1f}% accuracy).\n"
@@ -54,16 +65,31 @@ async def llm_narrative(signals: dict, user_query: str) -> str:
     user_msg = (
         f"User question: {user_query}\n\n"
         f"Live signals from the quantitative engine:\n{signal_context}\n"
-        f"{perf_context}\n\n"
-        "Please provide your institutional market brief."
+        f"{perf_context}\n"
+        f"{failure_context}\n\n"
+        "Please provide your institutional market brief. CRITICAL: If a live signal is nearly identical to a RECENT FAILURE logic above, explicitly state that you are dropping confidence or invalidating the trade based on historical memory."
     )
     return await advisor.get_advice(user_msg)
 
 
 class LLMAdvisor:
     def __init__(self):
-        self.gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
-        self.openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        # 1. Try to read from JSON config
+        config_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "llm_config.json")
+        env = dict(os.environ)
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r") as f:
+                    config_data = json.load(f)
+                    env.update(config_data)
+            except Exception:
+                pass
+                
+        self.gemini_key = env.get("GEMINI_API_KEY", "").strip()
+        self.openai_key = env.get("OPENAI_API_KEY", "").strip()
+        self.openai_api_base = env.get("OPENAI_API_BASE", "https://api.openai.com/v1").strip()
+        self.llm_model = env.get("LLM_MODEL", "gpt-3.5-turbo").strip()
+
         # Sanitise: strip any stray leading characters before "AIza"
         if self.gemini_key and "AIza" in self.gemini_key:
             self.gemini_key = self.gemini_key[self.gemini_key.index("AIza"):]
@@ -117,8 +143,8 @@ class LLMAdvisor:
             return f"[Gemini Connection Error: {str(e)}]\n\n" + self._rule_based_narrative({}, user_msg)
 
     async def _openai_narrative(self, api_key: str, user_msg: str) -> str:
-        api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
-        model    = os.environ.get("LLM_MODEL", "gpt-3.5-turbo")
+        api_base = self.openai_api_base or "https://api.openai.com/v1"
+        model    = self.llm_model or "gpt-3.5-turbo"
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
                 resp = await client.post(

@@ -12,3 +12,5 @@ mplfinance
 ta
 jinja2
 python-multipart
+supabase
+psycopg2-binary
