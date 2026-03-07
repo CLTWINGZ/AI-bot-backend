@@ -117,17 +117,38 @@ class DatabaseService:
             print(f"DATABASE_SERVICE ERROR: Failed to fetch history - {e}")
             return []
 
-    # --- Local Fallbacks (Keeps the app working while keys are missing) ---
+    # --- Local Fallbacks (Restores original CSV/JSON logic) ---
     @staticmethod
     def _local_save_pending(p_key, p_item):
-        path = os.path.join(os.getcwd(), "data", "pending_predictions.json")
+        """Restores your original JSON/CSV logic for pending trades."""
+        import pandas as pd
+        path_j = os.path.join(os.getcwd(), "data", "pending_predictions.json")
+        path_c = os.path.join(os.getcwd(), "data", "prediction_history.csv")
+        
+        # 1. Update JSON
         data = {}
-        if os.path.exists(path):
+        if os.path.exists(path_j):
             try:
-                with open(path) as f: data = json.load(f)
+                with open(path_j) as f: data = json.load(f)
             except: pass
         data[p_key] = p_item
-        with open(path, "w") as f: json.dump(data, f, indent=2)
+        with open(path_j, "w") as f: json.dump(data, f, indent=2)
+
+        # 2. Record Filtered/Qualified in CSV for AI Memory (Shadow Log)
+        if "prediction" in p_item:
+            try:
+                readable_time = datetime.fromisoformat(p_item["timestamp"]).strftime('%Y-%m-%d %H:%M:%S')
+                pd.DataFrame([{
+                    "date": p_item["timestamp"],
+                    "trade_time": readable_time,
+                    "symbol": p_item["symbol"],
+                    "interval": p_item["interval"],
+                    "time_unix": p_item["prediction"]["time"],
+                    "entry": p_item.get("entry", 0), "tp": p_item.get("tp", 0), "sl": p_item.get("sl", 0),
+                    "was_correct": -1, # Pending/Filtered
+                    "ai_logic": p_item.get("logic", "")
+                }]).to_csv(path_c, mode='a', index=False, header=not os.path.isfile(path_c))
+            except: pass
 
     @staticmethod
     def _local_get_pending():
@@ -140,9 +161,13 @@ class DatabaseService:
 
     @staticmethod
     def _local_resolve_trade(p_key, verdict):
+        """Restores your original logic for resolving trades into CSV and JSON."""
+        import pandas as pd
         path_h = os.path.join(os.getcwd(), "data", "prediction_history.json")
+        path_c = os.path.join(os.getcwd(), "data", "prediction_history.csv")
         path_p = os.path.join(os.getcwd(), "data", "pending_predictions.json")
-        # Save to history
+        
+        # 1. Update JSON History
         hist = []
         if os.path.exists(path_h):
             try:
@@ -150,7 +175,21 @@ class DatabaseService:
             except: pass
         hist.append(verdict)
         with open(path_h, "w") as f: json.dump(hist[-100:], f, indent=2)
-        # Remove from pending
+
+        # 2. Update CSV Audit (Original Logic)
+        try:
+            readable_time = datetime.fromisoformat(verdict["date"]).strftime('%Y-%m-%d %H:%M:%S')
+            pd.DataFrame([{
+                "date": verdict["date"], "trade_time": readable_time,
+                "symbol": verdict["symbol"], "interval": verdict["interval"],
+                "time_unix": verdict["time"], "entry": verdict["entry"], 
+                "tp": verdict["tp"], "sl": verdict["sl"],
+                "was_correct": int(verdict["was_correct"]), 
+                "ai_logic": verdict.get("logic", "N/A")
+            }]).to_csv(path_c, mode='a', index=False, header=not os.path.isfile(path_c))
+        except: pass
+
+        # 3. Remove from pending JSON
         pending = DatabaseService._local_get_pending()
         if p_key in pending: del pending[p_key]
         with open(path_p, "w") as f: json.dump(pending, f, indent=2)
