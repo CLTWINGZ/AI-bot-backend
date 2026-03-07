@@ -3,9 +3,9 @@ services:
     name: crypto-autopilot-backend
     runtime: docker
     region: ohio
-    # --- Point Render to the Dockerfile inside the backend folder ---
+    # --- Point Render to the NEW root-level Dockerfile ---
     dockerContext: .
-    dockerfilePath: backend/Dockerfile
+    dockerfilePath: Dockerfile
     envVars:
       - key: SUPABASE_URL
         value: https://vlcdzwwctuvctjonplly.supabase.co
