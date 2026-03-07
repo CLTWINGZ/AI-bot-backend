@@ -1,0 +1,18 @@
+﻿Testing key: AIzaSyAlCZ...
+Model: gemini-1.5-flash     | Status: 404 | {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. 
+Model: gemini-1.5-pro       | Status: 404 | {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-pro is not found for API version v1beta, or is not supported for generateContent. Ca
+Model: gemini-pro           | Status: 404 | {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-pro is not found for API version v1beta, or is not supported for generateContent. Call L
+Model: gemini-2.0-flash     | Status: 429 | {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on t
+Model: gemini-flash-latest  | Status: 200 | Success!

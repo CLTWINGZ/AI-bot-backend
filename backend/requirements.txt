@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+redis
+httpx
+websockets
+python-dotenv
+pandas
+numpy
+matplotlib
+mplfinance
+ta
+jinja2
+python-multipart
