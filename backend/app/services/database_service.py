@@ -11,6 +11,7 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 class DatabaseService:
     _instance: Optional[Client] = None
+    _lock = asyncio.Lock()
 
     @classmethod
     def get_client(cls) -> Optional[Client]:
@@ -22,11 +23,12 @@ class DatabaseService:
                 print(f"DATABASE_SERVICE ERROR: Failed to init Supabase - {e}")
         return cls._instance
 
-    @staticmethod
-    async def save_pending_prediction(p_key: str, p_item: Dict[str, Any]):
+    @classmethod
+    async def save_pending_prediction(cls, p_key: str, p_item: Dict[str, Any]):
         """Dual-Persists: Cloud DB + Local File."""
-        # 1. Always save locally first (Shadow Backup)
-        DatabaseService._local_save_pending(p_key, p_item)
+        # 1. Always save locally first (Shadow Backup) with Lock
+        async with cls._lock:
+            cls._local_save_pending(p_key, p_item)
 
         # 2. Save to Cloud if configured
         client = DatabaseService.get_client()
@@ -72,11 +74,12 @@ class DatabaseService:
         # Fallback to local if cloud fails or not configured
         return DatabaseService._local_get_pending()
 
-    @staticmethod
-    async def resolve_trade(p_key: str, verdict: Dict[str, Any]):
+    @classmethod
+    async def resolve_trade(cls, p_key: str, verdict: Dict[str, Any]):
         """Dual-Resolve: Cloud DB + Local History."""
-        # 1. Always process locally (Shadow Backup)
-        DatabaseService._local_resolve_trade(p_key, verdict)
+        # 1. Always process locally (Shadow Backup) with Lock
+        async with cls._lock:
+            cls._local_resolve_trade(p_key, verdict)
 
         # 2. Process in Cloud if configured
         client = DatabaseService.get_client()

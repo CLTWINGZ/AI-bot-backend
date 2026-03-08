@@ -476,9 +476,10 @@ async def llm_accuracy_validation(logic: str, symbol: str, price: float) -> floa
         response = await advisor.get_advice(prompt)
         # Extract float from response
         import re
-        match = re.search(r"(\d\.\d+)", response)
+        match = re.search(r"(\d*\.\d+|\d+)", response)
         if match:
-            return float(match.group(1))
+            val = float(match.group(1))
+            return min(1.0, max(0.0, val))
         return 0.8 # Default to cautious
     except:
         return 0.8
@@ -1047,22 +1048,11 @@ class PatternBot:
                                     break
                             
                             if not duplicate:
-                                # 1. Local JSON Update
-                                p_item["timestamp_unix"] = next_ts
-                                local_pending = {}
-                                if os.path.exists(pending_path):
-                                    try:
-                                        with open(pending_path) as f: local_pending = json.load(f)
-                                    except: pass
-                                local_pending[key] = p_item
-                                with open(pending_path, "w") as f:
-                                    json.dump(local_pending, f, indent=2)
-                                
-                                # 2. Cloud Sync (Supabase)
+                                # 2. Cloud Sync (Supabase) + Consolidated Local Persist
                                 await DatabaseService.save_pending_prediction(key, p_item)
 
-                    # 2. Trigger Global Re-Analysis (Directly in this file)
-                    await PatternBot.re_analyze_all_pending()
+                    # 2. Trigger Global Re-Analysis (Omitted - let the dedicated loop handle it)
+                    # await PatternBot.re_analyze_all_pending()
                 except Exception as e:
                     print(f"Prediction Logging Error: {e}")
 
@@ -1139,6 +1129,9 @@ class PatternBot:
                     tp = float(p_item.get("tp") or 0)
                     sl = float(p_item.get("sl", entry))
                     
+                    # Extract prediction core for RR tracking
+                    pred_core = p_item.get("prediction", {})
+
                     # Correct Bull Calculation: If entry is hit, did we go up or down to reach TP?
                     bull = p_item.get("bull", tp > entry)
 
@@ -1147,12 +1140,11 @@ class PatternBot:
                         any_global_changes = True
                         break
                     
-                    tp_hit = (bull and h >= tp) or (not bull and l <= tp)
-                    sl_hit = (bull and l <= sl) or (not bull and h >= sl)
                     entry_hit = (l <= entry <= h)
                     
-                    # Log every check for debugging
-                    print(f"DEBUG {symbol}: k_time={k_time} start={start_time} Candle={l}-{h} Entry={entry} tp={tp} sl={sl} hit={entry_hit} trig={p_item.get('is_triggered')}")
+                    # Log every check for debugging (sampled to avoid spam)
+                    if k_time % 60 == 0:
+                        print(f"DEBUG {symbol}: k_time={k_time} Candle={l}-{h} Entry={entry} tp={tp} sl={sl} hit={entry_hit} trig={p_item.get('is_triggered')}")
 
                     if entry_hit and not p_item.get("is_triggered", False):
                         print(f"DEBUG {symbol}: !!! TRIGGER ACTIVATED !!!")
@@ -1196,26 +1188,7 @@ class PatternBot:
                                 "failure_analysis": "None (Target Hit)" if res_success else "Volatility Spike (SL Hit)"
                             }
 
-                        # --- LOCAL SAVING ---
-                        hist_data = []
-                        if os.path.exists(history_path):
-                            try:
-                                with open(history_path) as f: hist_data = json.load(f)
-                            except: pass
-                        hist_data.append(verdict)
-                        with open(history_path, "w") as f: json.dump(hist_data[-100:], f, indent=2)
-
-                        # CSV Audit Log
-                        file_exists = os.path.isfile(csv_path)
-                        readable_time = datetime.fromisoformat(verdict["date"]).strftime('%Y-%m-%d %H:%M:%S')
-                        pd.DataFrame([{
-                            "date": verdict["date"], "trade_time": readable_time,
-                            "symbol": symbol, "interval": interval,
-                            "time_unix": k_time, "entry": entry, "tp": tp, "sl": sl,
-                            "was_correct": int(success), "ai_logic": verdict["logic"]
-                        }]).to_csv(csv_path, mode='a', index=False, header=not file_exists)
-
-                        # --- CLOUD SYNC ---
+                        # --- CONSOLIDATED RESOLUTION (Cloud + Local History) ---
                         await DatabaseService.resolve_trade(p_key, verdict)
 
                         del pending[p_key]
