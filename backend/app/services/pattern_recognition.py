@@ -1148,7 +1148,10 @@ class PatternBot:
                     
                     # Target (RR) Detection for Active Trades
                     if p_item.get("is_triggered"):
-                        rr1, rr2, rr3 = p_item.get("rr1"), p_item.get("rr2"), p_item.get("rr3")
+                        pred_core = p_item.get("prediction", {})
+                        rr1 = pred_core.get("rr1")
+                        rr2 = pred_core.get("rr2")
+                        rr3 = pred_core.get("rr3")
                         if rr1 and not p_item.get("rr1_hit"):
                             if (bull and h >= rr1) or (not bull and l <= rr1):
                                 p_item["rr1_hit"] = True

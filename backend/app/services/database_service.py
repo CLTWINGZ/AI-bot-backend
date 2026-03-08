@@ -120,10 +120,12 @@ class DatabaseService:
     # --- Local Fallbacks (Restores original CSV/JSON logic) ---
     @staticmethod
     def _local_save_pending(p_key, p_item):
-        """Restores your original JSON/CSV logic for pending trades."""
+        """Restores logic with standardized path."""
         import pandas as pd
-        path_j = os.path.join(os.getcwd(), "data", "pending_predictions.json")
-        path_c = os.path.join(os.getcwd(), "data", "prediction_history.csv")
+        local_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+        os.makedirs(local_dir, exist_ok=True)
+        path_j = os.path.join(local_dir, "pending_predictions.json")
+        path_c = os.path.join(local_dir, "prediction_history.csv")
         
         # 1. Update JSON
         data = {}
@@ -152,7 +154,8 @@ class DatabaseService:
 
     @staticmethod
     def _local_get_pending():
-        path = os.path.join(os.getcwd(), "data", "pending_predictions.json")
+        local_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+        path = os.path.join(local_dir, "pending_predictions.json")
         if os.path.exists(path):
             try:
                 with open(path) as f: return json.load(f)
