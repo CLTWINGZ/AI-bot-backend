@@ -37,21 +37,21 @@ LOG_DIR    = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 BASE_URL   = "http://localhost:8000/static"
 
 INTERVAL_CONFIG = {
-    "1m":  {"limit": 300, "plot_bars": 120, "pred_bars": 30, "fmt": "%H:%M"},
-    "3m":  {"limit": 300, "plot_bars": 120, "pred_bars": 25, "fmt": "%H:%M"},
-    "5m":  {"limit": 300, "plot_bars": 100, "pred_bars": 20, "fmt": "%H:%M"},
-    "15m": {"limit": 300, "plot_bars": 100, "pred_bars": 15, "fmt": "%H:%M"},
-    "30m": {"limit": 300, "plot_bars": 100, "pred_bars": 12, "fmt": "%H:%M"},
-    "1h":  {"limit": 300, "plot_bars": 100, "pred_bars": 10, "fmt": "%b %d %H:%M"},
-    "2h":  {"limit": 300, "plot_bars": 100, "pred_bars": 8,  "fmt": "%b %d %H:%M"},
-    "4h":  {"limit": 300, "plot_bars": 100, "pred_bars": 7,  "fmt": "%b %d %H:%M"},
-    "6h":  {"limit": 300, "plot_bars": 100, "pred_bars": 6,  "fmt": "%b %d"},
-    "8h":  {"limit": 300, "plot_bars": 100, "pred_bars": 5,  "fmt": "%b %d"},
-    "12h": {"limit": 300, "plot_bars": 100, "pred_bars": 4,  "fmt": "%b %d"},
-    "1d":  {"limit": 300, "plot_bars": 100, "pred_bars": 3,  "fmt": "%Y-%m-%d"},
-    "3d":  {"limit": 300, "plot_bars": 100, "pred_bars": 2,  "fmt": "%Y-%m-%d"},
-    "1w":  {"limit": 300, "plot_bars": 100, "pred_bars": 1,  "fmt": "%Y-%W"},
-    "1M":  {"limit": 300, "plot_bars": 100, "pred_bars": 1,  "fmt": "%Y-%m"},
+    "1m":  {"limit": 1000, "plot_bars": 120, "pred_bars": 30, "fmt": "%H:%M"},
+    "3m":  {"limit": 1000, "plot_bars": 120, "pred_bars": 25, "fmt": "%H:%M"},
+    "5m":  {"limit": 1000, "plot_bars": 100, "pred_bars": 20, "fmt": "%H:%M"},
+    "15m": {"limit": 1000, "plot_bars": 100, "pred_bars": 15, "fmt": "%H:%M"},
+    "30m": {"limit": 1000, "plot_bars": 100, "pred_bars": 12, "fmt": "%H:%M"},
+    "1h":  {"limit": 1000, "plot_bars": 100, "pred_bars": 10, "fmt": "%b %d %H:%M"},
+    "2h":  {"limit": 1000, "plot_bars": 100, "pred_bars": 8,  "fmt": "%b %d %H:%M"},
+    "4h":  {"limit": 1000, "plot_bars": 100, "pred_bars": 7,  "fmt": "%b %d %H:%M"},
+    "6h":  {"limit": 1000, "plot_bars": 100, "pred_bars": 6,  "fmt": "%b %d"},
+    "8h":  {"limit": 1000, "plot_bars": 100, "pred_bars": 5,  "fmt": "%b %d"},
+    "12h": {"limit": 1000, "plot_bars": 100, "pred_bars": 4,  "fmt": "%b %d"},
+    "1d":  {"limit": 1000, "plot_bars": 100, "pred_bars": 3,  "fmt": "%Y-%m-%d"},
+    "3d":  {"limit": 1000, "plot_bars": 100, "pred_bars": 2,  "fmt": "%Y-%m-%d"},
+    "1w":  {"limit": 1000, "plot_bars": 100, "pred_bars": 1,  "fmt": "%Y-%W"},
+    "1M":  {"limit": 1000, "plot_bars": 100, "pred_bars": 1,  "fmt": "%Y-%m"},
 }
 
 VALID_SYMBOLS = {"BTC", "ETH", "SOL", "BNB", "ETC", "XRP", "ADA", "DOGE"}
@@ -576,9 +576,10 @@ class PatternBot:
 
         try:
             async with httpx.AsyncClient(timeout=15) as client:
+                # 1. Fetch Main Chart Data (Max 1000 bars)
                 res = await client.get(
                     f"https://data-api.binance.vision/api/v3/klines"
-                    f"?symbol={fetch_asset}USDT&interval={interval}&limit=120"
+                    f"?symbol={fetch_asset}USDT&interval={interval}&limit=1000"
                 )
                 if res.status_code != 200:
                     return {"error": f"Binance API error: {res.status_code}"}
