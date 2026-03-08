@@ -24,7 +24,7 @@ export default function PredictionChart({ symbol, interval = "15m", predictionSt
         const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '';
         const API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || (!IS_LOCAL ? 'https://ai-bot-backend-u0ur.onrender.com' : 'http://localhost:8000');
 
-        fetch(`${API_BASE}/api/ohlc/${sym}/${interval}`)
+        fetch(`${API_BASE}/api/ohlc/${sym}/${interval}?t=${Date.now()}`)
             .then(res => res.json())
             .then(d => {
                 if (d.error) {
