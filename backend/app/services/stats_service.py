@@ -7,7 +7,7 @@ class StatsService:
         """Returns historical AI accuracy, past records, and active pending trades from Cloud DB."""
         
         # 1. Fetch from History
-        raw_history = DatabaseService.get_history(limit=50)
+        raw_history = DatabaseService.get_history(limit=200)
         
         data = []
         for x in raw_history:

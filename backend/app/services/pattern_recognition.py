@@ -947,7 +947,8 @@ class PatternBot:
                     "sl": trade_sl,
                     "rr1": rr1,
                     "rr2": rr2,
-                    "rr3": rr3
+                    "rr3": rr3,
+                    "monitor_start": history[-1]["time"] if history else next_ts
                 }
 
                 # Candle 2 (Secondary Projection - Non-Linear Sequential Forecasting)
@@ -1122,7 +1123,8 @@ class PatternBot:
 
                 for k in klines:
                     k_time = int(k[0] / 1000)
-                    if k_time < p_item["prediction"]["time"]: continue
+                    start_time = p_item["prediction"].get("monitor_start", p_item["prediction"]["time"])
+                    if k_time < start_time: continue
                     
                     o, h, l, c = float(k[1]), float(k[2]), float(k[3]), float(k[4])
                     entry, tp = p_item.get("entry"), p_item.get("tp")

@@ -803,15 +803,18 @@ export default function App() {
                                 {(() => {
                                   const fourHoursAgo = Date.now() / 1000 - (4 * 3600);
                                   const recent = predictionStats.data.filter(x => x.was_correct !== null && x.time >= fourHoursAgo);
-                                  if (recent.length === 0) return null;
                                   return (
                                     <div style={{ marginBottom: '12px' }}>
                                       <div style={{ fontSize: '10px', fontWeight: 800, color: '#4caf50', borderBottom: '1px solid rgba(76,175,80,0.2)', paddingBottom: '2px', marginBottom: '6px' }}>
                                         🕒 RESOLVED (LST 4H)
                                       </div>
-                                      {recent.slice().reverse().map((stat, i) => (
-                                        <AnalysisRow key={`recent-${i}`} stat={stat} />
-                                      ))}
+                                      {recent.length > 0 ? (
+                                        recent.slice().reverse().map((stat, i) => (
+                                          <AnalysisRow key={`recent-${i}`} stat={stat} />
+                                        ))
+                                      ) : (
+                                        <div style={{ fontSize: '8px', color: '#555', fontStyle: 'italic', padding: '4px 0' }}>No recent resolutions in the last 4 hours.</div>
+                                      )}
                                     </div>
                                   );
                                 })()}
