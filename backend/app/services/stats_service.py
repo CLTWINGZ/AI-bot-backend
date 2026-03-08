@@ -12,7 +12,17 @@ class StatsService:
         data = []
         for x in raw_history:
             # Unify time field (Cloud uses time_unix, Local uses time)
-            t_val = x.get("time") or x.get("time_unix") or 0
+            t_val = x.get("time") or x.get("time_unix")
+            
+            # Fallback to parsing date string if unix time is missing
+            if t_val is None and x.get("date"):
+                try:
+                    from datetime import datetime
+                    t_val = int(datetime.fromisoformat(x.get("date").replace("Z", "+00:00")).timestamp())
+                except:
+                    t_val = 0
+            
+            t_val = int(t_val or 0)
             
             # Unify logic filtering
             logic = str(x.get("logic", ""))
@@ -29,6 +39,9 @@ class StatsService:
                     "logic": logic,
                     "failure_analysis": x.get("failure_analysis")
                 })
+        
+        # Sort and deduplicate if necessary, but at least sort by time descending
+        data.sort(key=lambda x: x.get("time", 0), reverse=True)
                 
         # 2. Fetch Pending
         pending_data = DatabaseService.get_all_pending()

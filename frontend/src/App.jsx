@@ -23,50 +23,67 @@ const INITIAL_MESSAGES = [
   }
 ];
 
-const AnalysisRow = ({ stat }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '9px' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-      <span style={{
-        color: stat.was_correct === true ? '#4caf50' :
-          (stat.was_correct === false ? '#ef5350' :
-            (stat.is_active ? '#ffc107' : '#3b82f6')),
-        fontWeight: 800
-      }}>
-        {stat.was_correct === true ? '● HIT' :
-          (stat.was_correct === false ? '○ MISS' :
-            (stat.is_active ? '⚡ ACTIVE' : '⏳ PENDING'))} {stat.symbol}/{stat.interval}
-      </span>
-      <span style={{ color: '#666' }}>{`${new Date(stat.time * 1000).getFullYear()}/${String(new Date(stat.time * 1000).getMonth() + 1).padStart(2, '0')}/${String(new Date(stat.time * 1000).getDate()).padStart(2, '0')}`} {new Date(stat.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-    </div>
-    {/* Entry / TP / SL price row */}
-    {stat.entry && (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
-        <div style={{ display: 'flex', gap: '8px', fontSize: '8px' }}>
-          <span style={{ color: '#888' }}>ENTRY: <strong style={{ color: '#e0e0e0' }}>${stat.entry?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
-          <span style={{ color: '#888' }}>TP: <strong style={{ color: '#4caf50' }}>${stat.tp?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
-          <span style={{ color: '#888' }}>SL: <strong style={{ color: '#ef5350' }}>${stat.sl?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
-        </div>
-        {stat.rr1 && (
-          <div style={{ display: 'flex', gap: '6px', fontSize: '7px' }}>
-            <span style={{ color: stat.rr1_hit ? '#4caf50' : '#666' }}>1:1 {stat.rr1_hit && '✓'} <strong style={{ color: stat.rr1_hit ? '#81c784' : '#aaa' }}>${stat.rr1?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
-            <span style={{ color: stat.rr2_hit ? '#4caf50' : '#666' }}>1:2 {stat.rr2_hit && '✓'} <strong style={{ color: stat.rr2_hit ? '#81c784' : '#aaa' }}>${stat.rr2?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
-            <span style={{ color: stat.rr3_hit ? '#4caf50' : '#666' }}>1:3 {stat.rr3_hit && '✓'} <strong style={{ color: stat.rr3_hit ? '#ffc107' : '#aaa' }}>${stat.rr3?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
+const AnalysisRow = ({ stat }) => {
+  const unixTime = Number(stat.time) || 0;
+  const dateObj = unixTime > 0 ? new Date(unixTime * 1000) : new Date();
+
+  const formatDate = (d) => {
+    try {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return `${year}/${month}/${day} ${timeStr}`;
+    } catch {
+      return 'Recent';
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '9px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <span style={{
+          color: stat.was_correct === true ? '#4caf50' :
+            (stat.was_correct === false ? '#ef5350' :
+              (stat.is_active ? '#ffc107' : '#3b82f6')),
+          fontWeight: 800
+        }}>
+          {stat.was_correct === true ? '● HIT' :
+            (stat.was_correct === false ? '○ MISS' :
+              (stat.is_active ? '⚡ ACTIVE' : '⏳ PENDING'))} {stat.symbol}/{stat.interval}
+        </span>
+        <span style={{ color: '#666' }}>{formatDate(dateObj)}</span>
+      </div>
+      {/* Entry / TP / SL price row */}
+      {stat.entry && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+          <div style={{ display: 'flex', gap: '8px', fontSize: '8px' }}>
+            <span style={{ color: '#888' }}>ENTRY: <strong style={{ color: '#e0e0e0' }}>${stat.entry?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
+            <span style={{ color: '#888' }}>TP: <strong style={{ color: '#4caf50' }}>${stat.tp?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
+            <span style={{ color: '#888' }}>SL: <strong style={{ color: '#ef5350' }}>${stat.sl?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
           </div>
-        )}
-      </div>
-    )}
-    {!stat.was_correct && stat.failure_analysis && (
-      <div style={{ color: '#aaa', fontStyle: 'italic', fontSize: '8px', marginTop: '1px' }}>
-        Result: {stat.failure_analysis}
-      </div>
-    )}
-    {stat.logic && (
-      <div style={{ color: '#888', fontStyle: 'italic', fontSize: '8px', marginTop: '1px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '2px' }}>
-        {stat.logic}
-      </div>
-    )}
-  </div>
-);
+          {stat.rr1 && (
+            <div style={{ display: 'flex', gap: '6px', fontSize: '7px' }}>
+              <span style={{ color: stat.rr1_hit ? '#4caf50' : '#666' }}>1:1 {stat.rr1_hit && '✓'} <strong style={{ color: stat.rr1_hit ? '#81c784' : '#aaa' }}>${stat.rr1?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
+              <span style={{ color: stat.rr2_hit ? '#4caf50' : '#666' }}>1:2 {stat.rr2_hit && '✓'} <strong style={{ color: stat.rr2_hit ? '#81c784' : '#aaa' }}>${stat.rr2?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
+              <span style={{ color: stat.rr3_hit ? '#4caf50' : '#666' }}>1:3 {stat.rr3_hit && '✓'} <strong style={{ color: stat.rr3_hit ? '#ffc107' : '#aaa' }}>${stat.rr3?.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong></span>
+            </div>
+          )}
+        </div>
+      )}
+      {!stat.was_correct && stat.failure_analysis && (
+        <div style={{ color: '#aaa', fontStyle: 'italic', fontSize: '8px', marginTop: '1px' }}>
+          Result: {stat.failure_analysis}
+        </div>
+      )}
+      {stat.logic && (
+        <div style={{ color: '#888', fontStyle: 'italic', fontSize: '8px', marginTop: '1px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '2px' }}>
+          {stat.logic}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function App() {
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
