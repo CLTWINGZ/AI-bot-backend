@@ -80,6 +80,9 @@ export default function PredictionChart({ symbol, interval = "15m", predictionSt
                     borderColor: 'rgba(197, 203, 206, 0.1)',
                     timeVisible: true,
                     secondsVisible: false,
+                    shiftVisibleRangeOnNewBar: true,
+                    rightOffset: 20,
+                    fixLeftEdge: true,
                 },
             });
 
@@ -333,7 +336,7 @@ export default function PredictionChart({ symbol, interval = "15m", predictionSt
                 }
             }
 
-            chart.timeScale().scrollToRealTime();
+            chart.timeScale().fitContent();
 
             // Handle resize
             const handleResize = () => {

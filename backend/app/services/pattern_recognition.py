@@ -580,7 +580,7 @@ class PatternBot:
                 klines = []
                 current_end_time = None
                 
-                for _ in range(3): # 3 batches of 1000 = 3,000 bars
+                for _ in range(5): # 5 batches of 1000 = 5,000 bars
                     batch_url = f"https://data-api.binance.vision/api/v3/klines?symbol={fetch_asset}USDT&interval={interval}&limit=1000"
                     if current_end_time:
                         batch_url += f"&endTime={current_end_time - 1}"
