@@ -164,11 +164,13 @@ class DatabaseService:
 
     @staticmethod
     def _local_resolve_trade(p_key, verdict):
-        """Restores your original logic for resolving trades into CSV and JSON."""
+        """Restores logic for resolving trades with standardized paths."""
         import pandas as pd
-        path_h = os.path.join(os.getcwd(), "data", "prediction_history.json")
-        path_c = os.path.join(os.getcwd(), "data", "prediction_history.csv")
-        path_p = os.path.join(os.getcwd(), "data", "pending_predictions.json")
+        local_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+        os.makedirs(local_dir, exist_ok=True)
+        path_h = os.path.join(local_dir, "prediction_history.json")
+        path_c = os.path.join(local_dir, "prediction_history.csv")
+        path_p = os.path.join(local_dir, "pending_predictions.json")
         
         # 1. Update JSON History
         hist = []
@@ -179,7 +181,7 @@ class DatabaseService:
         hist.append(verdict)
         with open(path_h, "w") as f: json.dump(hist[-100:], f, indent=2)
 
-        # 2. Update CSV Audit (Original Logic)
+        # 2. Update CSV Audit
         try:
             readable_time = datetime.fromisoformat(verdict["date"]).strftime('%Y-%m-%d %H:%M:%S')
             pd.DataFrame([{
@@ -194,12 +196,15 @@ class DatabaseService:
 
         # 3. Remove from pending JSON
         pending = DatabaseService._local_get_pending()
-        if p_key in pending: del pending[p_key]
+        if p_key in pending:
+            print(f"DEBUG: Removing {p_key} from local pending JSON.")
+            del pending[p_key]
         with open(path_p, "w") as f: json.dump(pending, f, indent=2)
 
     @staticmethod
     def _local_get_history(limit):
-        path = os.path.join(os.getcwd(), "data", "prediction_history.json")
+        local_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+        path = os.path.join(local_dir, "prediction_history.json")
         if os.path.exists(path):
             try:
                 with open(path) as f: 

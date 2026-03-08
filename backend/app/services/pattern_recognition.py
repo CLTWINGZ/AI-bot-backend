@@ -1138,16 +1138,17 @@ class PatternBot:
                     
                     tp_hit = (bull and h >= tp) or (not bull and l <= tp)
                     sl_hit = (bull and l <= sl) or (not bull and h >= sl)
-                    entry_hit = (bull and h >= entry) or (not bull and l <= entry)
+                    entry_hit = (l <= entry <= h)
 
                     if entry_hit and not p_item.get("is_triggered", False):
+                        print(f"DEBUG {symbol}: Entry Hit! Candle {l}-{h}, Entry {entry}")
                         p_item["is_triggered"] = True
                         any_global_changes = True
                         # Triggered status MUST sync to cloud immediately so frontend sees "ACTIVE"
                         await DatabaseService.save_pending_prediction(p_key, p_item)
                     
-                    # Target (RR) Detection for Active Trades
                     if p_item.get("is_triggered"):
+                        print(f"DEBUG {symbol}: Monitoring Active. Candle range {l}-{h}, TP {tp}, SL {sl}")
                         pred_core = p_item.get("prediction", {})
                         rr1 = pred_core.get("rr1")
                         rr2 = pred_core.get("rr2")
