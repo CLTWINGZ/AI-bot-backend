@@ -948,7 +948,7 @@ class PatternBot:
                     "rr1": rr1,
                     "rr2": rr2,
                     "rr3": rr3,
-                    "monitor_start": history[-1]["time"] if history else next_ts
+                    "monitor_start": int(history[-1]["time"]) if history else int(time.time())
                 }
 
                 # Candle 2 (Secondary Projection - Non-Linear Sequential Forecasting)
