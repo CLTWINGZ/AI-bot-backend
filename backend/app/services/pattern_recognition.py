@@ -1131,13 +1131,16 @@ class PatternBot:
 
                 for k in klines:
                     k_time = int(k[0] / 1000)
-                    start_time = p_item["prediction"].get("monitor_start", p_item["prediction"]["time"])
+                    start_time = int(p_item["prediction"].get("monitor_start", p_item["prediction"]["time"]))
                     if k_time < start_time: continue
                     
                     o, h, l, c = float(k[1]), float(k[2]), float(k[3]), float(k[4])
-                    entry, tp = p_item.get("entry"), p_item.get("tp")
-                    sl = p_item.get("sl", entry)
-                    bull = p_item.get("bull", tp >= entry) if entry and tp else True
+                    entry = float(p_item.get("entry") or 0)
+                    tp = float(p_item.get("tp") or 0)
+                    sl = float(p_item.get("sl", entry))
+                    
+                    # Correct Bull Calculation: If entry is hit, did we go up or down to reach TP?
+                    bull = p_item.get("bull", tp > entry)
 
                     if entry is None or tp is None:
                         del pending[p_key]
