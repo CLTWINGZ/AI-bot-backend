@@ -336,7 +336,11 @@ export default function PredictionChart({ symbol, interval = "15m", predictionSt
                 }
             }
 
-            chart.timeScale().fitContent();
+            setTimeout(() => {
+                if (chartRef.current) {
+                    chartRef.current.timeScale().fitContent();
+                }
+            }, 100);
 
             // Handle resize
             const handleResize = () => {
