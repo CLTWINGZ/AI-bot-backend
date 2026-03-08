@@ -3,7 +3,6 @@ from .database_service import DatabaseService
 
 class StatsService:
     @staticmethod
-    @staticmethod
     def get_prediction_stats():
         """Returns historical AI accuracy, past records, and active pending trades from Cloud DB."""
         

@@ -1099,7 +1099,7 @@ class PatternBot:
                 if cache_key not in klines_cache:
                     async with httpx.AsyncClient(timeout=10) as client:
                         res = await client.get(
-                            f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}USDT&interval={interval}&limit=10"
+                            f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}USDT&interval={interval}&limit=100"
                         )
                         if res.status_code == 200:
                             klines_cache[cache_key] = res.json()
