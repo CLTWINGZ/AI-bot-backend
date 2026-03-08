@@ -1022,18 +1022,30 @@ class PatternBot:
                             "ai_logic": " | ".join(logic_notes)
                         }]).to_csv(csv_path, mode='a', index=False, header=not file_exists)
                     else:
-                        # QUALIFIED SIGNAL - Local JSON Log
-                        pending = {}
-                        if os.path.exists(pending_path):
-                            try:
-                                with open(pending_path) as f: pending = json.load(f)
-                            except: pending = {}
-                        pending[key] = p_item
-                        with open(pending_path, "w") as f:
-                            json.dump(pending, f, indent=2)
-
-                    # --- CLOUD SYNC (Supabase) ---
-                    await DatabaseService.save_pending_prediction(key, p_item)
+                        # QUALIFIED SIGNAL - Anti-Spam Check
+                        pending = DatabaseService.get_all_pending()
+                        
+                        # Check for existing pending trade for this symbol/interval
+                        duplicate = False
+                        for p_val in pending.values():
+                            if p_val.get("symbol") == fetch_asset and p_val.get("interval") == interval:
+                                duplicate = True
+                                break
+                        
+                        if not duplicate:
+                            # 1. Local JSON Update
+                            p_item["timestamp_unix"] = next_ts
+                            local_pending = {}
+                            if os.path.exists(pending_path):
+                                try:
+                                    with open(pending_path) as f: local_pending = json.load(f)
+                                except: pass
+                            local_pending[key] = p_item
+                            with open(pending_path, "w") as f:
+                                json.dump(local_pending, f, indent=2)
+                            
+                            # 2. Cloud Sync (Supabase)
+                            await DatabaseService.save_pending_prediction(key, p_item)
 
                 # 2. Trigger Global Re-Analysis (Directly in this file)
                 await PatternBot.re_analyze_all_pending()
