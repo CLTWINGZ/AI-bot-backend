@@ -1111,12 +1111,20 @@ class PatternBot:
 
             try:
                 if cache_key not in klines_cache:
+                    # Calculate the earliest possible monitor_start for this symbol/interval
+                    # among ALL pending trades to ensure we fetch enough history.
+                    relevant_pending = [v for k, v in pending.items() if v["symbol"] == symbol and v["interval"] == interval]
+                    min_start = min([v["prediction"].get("monitor_start", v["prediction"]["time"]) for v in relevant_pending])
+                    
+                    # Convert to milliseconds for Binance
+                    start_ms = int(min_start * 1000)
+                    
                     async with httpx.AsyncClient(timeout=10) as client:
-                        res = await client.get(
-                            f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}USDT&interval={interval}&limit=100"
-                        )
+                        url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}USDT&interval={interval}&limit=1000&startTime={start_ms}"
+                        res = await client.get(url)
                         if res.status_code == 200:
                             klines_cache[cache_key] = res.json()
+                            print(f"DEBUG: Fetched {len(klines_cache[cache_key])} klines for {symbol}/{interval} starting from {min_start}")
                 
                 klines = klines_cache.get(cache_key)
                 if not klines: continue
