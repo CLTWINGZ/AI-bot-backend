@@ -1159,47 +1159,42 @@ class PatternBot:
                         p_item["is_triggered"] = True
                         any_global_changes = True
                         await DatabaseService.save_pending_prediction(p_key, p_item)
-                    
+
                     if p_item.get("is_triggered"):
-                        print(f"DEBUG {symbol}: Monitoring Active. Candle range {l}-{h}, TP {tp}, SL {sl}")
-                        pred_core = p_item.get("prediction", {})
-                        rr1 = pred_core.get("rr1")
-                        rr2 = pred_core.get("rr2")
-                        rr3 = pred_core.get("rr3")
-                        if rr1 and not p_item.get("rr1_hit"):
-                            if (bull and h >= rr1) or (not bull and l <= rr1):
-                                p_item["rr1_hit"] = True
-                                any_global_changes = True
-                                await DatabaseService.save_pending_prediction(p_key, p_item)
-                        if rr2 and not p_item.get("rr2_hit"):
-                            if (bull and h >= rr2) or (not bull and l <= rr2):
-                                p_item["rr2_hit"] = True
-                                any_global_changes = True
-                                await DatabaseService.save_pending_prediction(p_key, p_item)
-                        if rr3 and not p_item.get("rr3_hit"):
-                            if (bull and h >= rr3) or (not bull and l <= rr3):
-                                p_item["rr3_hit"] = True
-                                any_global_changes = True
-                                await DatabaseService.save_pending_prediction(p_key, p_item)
-                    
-                    success = None
-                    if tp_hit and not sl_hit: success = True
-                    elif sl_hit: success = False
-                    
-                    if success is not None:
-                        any_global_changes = True
-                        verdict = {
-                            "symbol": symbol, "interval": interval, "time": k_time,
-                            "actual_ohlc": {"time": k_time, "open": o, "high": h, "low": l, "close": c},
-                            "was_correct": success, "date": datetime.now().isoformat(),
-                            "entry": entry, "tp": tp, "sl": sl,
-                            "rr1": p_item.get("rr1"), "rr2": p_item.get("rr2"), "rr3": p_item.get("rr3"),
-                            "rr1_hit": p_item.get("rr1_hit", False), 
-                            "rr2_hit": p_item.get("rr2_hit", False), 
-                            "rr3_hit": p_item.get("rr3_hit", False),
-                            "logic": p_item.get("logic", "N/A"),
-                            "failure_analysis": "None (Target Hit)" if success else "Volatility Spike (SL Hit)"
-                        }
+                        # Priorities RR targets first
+                        for i in range(1, 4):
+                            rr_key = f"rr{i}"
+                            hit_key = f"rr{i}_hit"
+                            rr_val = pred_core.get(rr_key)
+                            if rr_val and not p_item.get(hit_key):
+                                if (bull and h >= rr_val) or (not bull and l <= rr_val):
+                                    p_item[hit_key] = True
+                                    any_global_changes = True
+                                    await DatabaseService.save_pending_prediction(p_key, p_item)
+
+                        # Then check major Resolution
+                        res_success = None
+                        if bull:
+                            if h >= tp: res_success = True
+                            elif l <= sl: res_success = False
+                        else:
+                            if l <= tp: res_success = True
+                            elif h >= sl: res_success = False
+
+                        if res_success is not None:
+                            any_global_changes = True
+                            verdict = {
+                                "symbol": symbol, "interval": interval, "time": k_time,
+                                "actual_ohlc": {"time": k_time, "open": o, "high": h, "low": l, "close": c},
+                                "was_correct": res_success, "date": datetime.now().isoformat(),
+                                "entry": entry, "tp": tp, "sl": sl,
+                                "rr1": p_item.get("rr1"), "rr2": p_item.get("rr2"), "rr3": p_item.get("rr3"),
+                                "rr1_hit": p_item.get("rr1_hit", False), 
+                                "rr2_hit": p_item.get("rr2_hit", False), 
+                                "rr3_hit": p_item.get("rr3_hit", False),
+                                "logic": p_item.get("logic", "N/A"),
+                                "failure_analysis": "None (Target Hit)" if res_success else "Volatility Spike (SL Hit)"
+                            }
 
                         # --- LOCAL SAVING ---
                         hist_data = []
