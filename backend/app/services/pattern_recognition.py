@@ -603,7 +603,17 @@ class PatternBot:
                             last_ts = batch[0][0] # Earliest timestamp in this batch
                         else: break
                 
-                # 3. Fetch Ultra-Macro Data (Weekly 1W) (1000 weeks ~ 19 years)
+                # 3. Calculate Macro ATH/ATL (~10 years)
+                ath = 0
+                atl = float('inf')
+                if macro_klines:
+                    for k in macro_klines:
+                        h_val = float(k[2])
+                        l_val = float(k[3])
+                        if h_val > ath: ath = h_val
+                        if l_val < atl: atl = l_val
+                
+                # 4. Fetch Ultra-Macro Data (Weekly 1W) (1000 weeks ~ 19 years)
             # Format data for Lightweight Charts (time as unix ts, open, high, low, close)
             history = []
             closes = []
@@ -1034,6 +1044,8 @@ class PatternBot:
                 "symbol": fetch_asset, "interval": interval, "history": history,
                 "prediction": prediction1, "predictions": predictions,
                 "wave_pivots": wave_pivots, "ict_zones": ict.get("zones", []),
+                "macro_ath": ath if ath > 0 else None,
+                "macro_atl": atl if atl < float('inf') else None,
                 "ict_summary": {
                     "premium_discount": ict.get("premium_discount"),
                     "kill_zone": ict.get("kill_zone")

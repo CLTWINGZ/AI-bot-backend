@@ -241,6 +241,28 @@ export default function PredictionChart({ symbol, interval = "15m", predictionSt
                 d.was_correct === null
             );
 
+            // 3.5 Macro ATH/ATL Levels (10-Year)
+            if (data.macro_ath) {
+                candleSeries.createPriceLine({
+                    price: data.macro_ath,
+                    color: '#FFD700', // Gold
+                    lineWidth: 2,
+                    lineStyle: 1, // Dotted
+                    axisLabelVisible: true,
+                    title: '10Y ALL-TIME HIGH 🏆',
+                });
+            }
+            if (data.macro_atl) {
+                candleSeries.createPriceLine({
+                    price: data.macro_atl,
+                    color: '#BA68C8', // Purple
+                    lineWidth: 2,
+                    lineStyle: 1, // Dotted
+                    axisLabelVisible: true,
+                    title: '10Y ALL-TIME LOW 📉',
+                });
+            }
+
             const displayEntry = activeTrade?.entry || data.prediction?.entry;
             const displayTP = activeTrade?.tp || data.prediction?.tp;
             const displaySL = activeTrade?.sl || data.prediction?.sl;
