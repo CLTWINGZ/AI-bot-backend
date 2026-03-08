@@ -1150,12 +1150,14 @@ class PatternBot:
                     tp_hit = (bull and h >= tp) or (not bull and l <= tp)
                     sl_hit = (bull and l <= sl) or (not bull and h >= sl)
                     entry_hit = (l <= entry <= h)
+                    
+                    # Log every check for debugging
+                    print(f"DEBUG {symbol}: k_time={k_time} start={start_time} Candle={l}-{h} Entry={entry} tp={tp} sl={sl} hit={entry_hit} trig={p_item.get('is_triggered')}")
 
                     if entry_hit and not p_item.get("is_triggered", False):
-                        print(f"DEBUG {symbol}: Entry Hit! Candle {l}-{h}, Entry {entry}")
+                        print(f"DEBUG {symbol}: !!! TRIGGER ACTIVATED !!!")
                         p_item["is_triggered"] = True
                         any_global_changes = True
-                        # Triggered status MUST sync to cloud immediately so frontend sees "ACTIVE"
                         await DatabaseService.save_pending_prediction(p_key, p_item)
                     
                     if p_item.get("is_triggered"):
