@@ -584,6 +584,26 @@ class PatternBot:
                     return {"error": f"Binance API error: {res.status_code}"}
                 klines = res.json()
 
+                # 2. Fetch Macro Data (Daily 1D) (~10+ years - requires multiple requests)
+                macro_klines = []
+                last_ts = None
+                for _ in range(4): # 4 requests * 1000 = 4000 days (~11 years)
+                    t_url = f"https://data-api.binance.vision/api/v3/klines?symbol={fetch_asset}USDT&interval=1d&limit=1000"
+                    if last_ts:
+                        t_url += f"&endTime={last_ts - 1}"
+                    
+                    async with httpx.AsyncClient(timeout=10) as client:
+                        m_res = await client.get(t_url)
+                        if m_res.status_code == 200:
+                            batch = m_res.json()
+                            if not batch: break
+                            # Klines are returned ASCENDING. When using endTime, we get earlier data.
+                            # So we prepend it.
+                            macro_klines = batch + macro_klines
+                            last_ts = batch[0][0] # Earliest timestamp in this batch
+                        else: break
+                
+                # 3. Fetch Ultra-Macro Data (Weekly 1W) (1000 weeks ~ 19 years)
             # Format data for Lightweight Charts (time as unix ts, open, high, low, close)
             history = []
             closes = []
