@@ -799,7 +799,24 @@ export default function App() {
                                   )}
                                 </div>
 
-                                {/* 📜 RECENT RESULTS SECTION */}
+                                {/* 🕒 RESOLVED (LST 4H) SECTION */}
+                                {(() => {
+                                  const fourHoursAgo = Date.now() / 1000 - (4 * 3600);
+                                  const recent = predictionStats.data.filter(x => x.was_correct !== null && x.time >= fourHoursAgo);
+                                  if (recent.length === 0) return null;
+                                  return (
+                                    <div style={{ marginBottom: '12px' }}>
+                                      <div style={{ fontSize: '10px', fontWeight: 800, color: '#4caf50', borderBottom: '1px solid rgba(76,175,80,0.2)', paddingBottom: '2px', marginBottom: '6px' }}>
+                                        🕒 RESOLVED (LST 4H)
+                                      </div>
+                                      {recent.slice().reverse().map((stat, i) => (
+                                        <AnalysisRow key={`recent-${i}`} stat={stat} />
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* 📜 ALL HISTORICAL DATA SECTION */}
                                 {predictionStats.data.some(x => x.was_correct !== null) && (
                                   <div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '2px', marginBottom: '6px' }}>

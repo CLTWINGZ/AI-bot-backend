@@ -36,6 +36,12 @@ class StatsService:
                     "entry": x.get("entry"),
                     "tp": x.get("tp"),
                     "sl": x.get("sl"),
+                    "rr1": x.get("rr1"),
+                    "rr2": x.get("rr2"),
+                    "rr3": x.get("rr3"),
+                    "rr1_hit": x.get("rr1_hit", False),
+                    "rr2_hit": x.get("rr2_hit", False),
+                    "rr3_hit": x.get("rr3_hit", False),
                     "logic": logic,
                     "failure_analysis": x.get("failure_analysis")
                 })

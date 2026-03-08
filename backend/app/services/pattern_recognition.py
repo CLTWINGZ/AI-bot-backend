@@ -1141,6 +1141,27 @@ class PatternBot:
                     if entry_hit and not p_item.get("is_triggered", False):
                         p_item["is_triggered"] = True
                         any_global_changes = True
+                        # Triggered status MUST sync to cloud immediately so frontend sees "ACTIVE"
+                        await DatabaseService.save_pending_prediction(p_key, p_item)
+                    
+                    # Target (RR) Detection for Active Trades
+                    if p_item.get("is_triggered"):
+                        rr1, rr2, rr3 = p_item.get("rr1"), p_item.get("rr2"), p_item.get("rr3")
+                        if rr1 and not p_item.get("rr1_hit"):
+                            if (bull and h >= rr1) or (not bull and l <= rr1):
+                                p_item["rr1_hit"] = True
+                                any_global_changes = True
+                                await DatabaseService.save_pending_prediction(p_key, p_item)
+                        if rr2 and not p_item.get("rr2_hit"):
+                            if (bull and h >= rr2) or (not bull and l <= rr2):
+                                p_item["rr2_hit"] = True
+                                any_global_changes = True
+                                await DatabaseService.save_pending_prediction(p_key, p_item)
+                        if rr3 and not p_item.get("rr3_hit"):
+                            if (bull and h >= rr3) or (not bull and l <= rr3):
+                                p_item["rr3_hit"] = True
+                                any_global_changes = True
+                                await DatabaseService.save_pending_prediction(p_key, p_item)
                     
                     success = None
                     if tp_hit and not sl_hit: success = True
@@ -1153,6 +1174,10 @@ class PatternBot:
                             "actual_ohlc": {"time": k_time, "open": o, "high": h, "low": l, "close": c},
                             "was_correct": success, "date": datetime.now().isoformat(),
                             "entry": entry, "tp": tp, "sl": sl,
+                            "rr1": p_item.get("rr1"), "rr2": p_item.get("rr2"), "rr3": p_item.get("rr3"),
+                            "rr1_hit": p_item.get("rr1_hit", False), 
+                            "rr2_hit": p_item.get("rr2_hit", False), 
+                            "rr3_hit": p_item.get("rr3_hit", False),
                             "logic": p_item.get("logic", "N/A"),
                             "failure_analysis": "None (Target Hit)" if success else "Volatility Spike (SL Hit)"
                         }
